@@ -4,23 +4,55 @@ The project currently contains the customer-facing website and the first Flask b
 
 ## Run the Flask app locally
 
-Requires Python 3.11 or newer.
+Requires Python 3.11.9 (`.python-version`).
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
+Copy-Item .env.example .env
 flask --app run.py db upgrade
 flask --app run.py run --debug
 ```
 
-Open `http://127.0.0.1:5000`. Flask uses a local SQLite database by default, stored under `instance/`. Set `DATABASE_URL` before running the app to use another database. For MySQL, install the dependencies from `requirements.txt` and configure a URI such as:
+Open `http://127.0.0.1:5000`. Flask uses a local SQLite database by default, stored under `instance/`. The `.env.example` file is a template; replace the example `SECRET_KEY` before using sessions and do not commit `.env`.
+
+For MySQL, set `DATABASE_URL` to a connection URL such as:
 
 ```text
 mysql+pymysql://USER:PASSWORD@HOST:3306/DATABASE
 ```
 
-Keep credentials in environment variables, not in source control. The `.gitignore` excludes the local database and `.env` files.
+The `mysql://` URL prefix is also normalized to `mysql+pymysql://`. Keep real database credentials in environment variables, not in source control. The `.gitignore` excludes local database and `.env` files.
+
+## Render deployment
+
+The root `render.yaml` configures a native Python web service with Python 3.11.9 (from `.python-version`), Gunicorn, a health check, and database migrations as a pre-deploy command. It uses Render's paid `0.5c-512mb` plan; check current pricing and change the plan in `render.yaml` before creating the Blueprint if needed. Importing the Blueprint creates cloud resources and can incur charges.
+
+Render Blueprints manage Render Postgres databases directly, not MySQL. Provision MySQL separately before creating the web service:
+
+1. Create a private MySQL service using a reviewed, maintained MySQL image or template; place it in the same Render region as the web service.
+2. Configure `MYSQL_DATABASE`, `MYSQL_USER`, `MYSQL_PASSWORD`, and `MYSQL_ROOT_PASSWORD` in the MySQL service's environment settings. Use strong, distinct passwords and never commit them.
+3. Attach persistent storage at the MySQL image's data directory (commonly `/var/lib/mysql`). Choose a disk size based on actual needs and configure separate backups; a disk alone is not a backup.
+4. Wait for the database service to become healthy and obtain its private hostname. Keep public database access disabled where possible.
+
+Then connect the app:
+
+1. Push the project to your GitHub repository and create a Render Blueprint from the repository's `render.yaml`.
+2. Provide `DATABASE_URL` when prompted. Use `mysql+pymysql://USER:PASSWORD@PRIVATE_HOST:3306/DATABASE`; URL-encode special characters in the username or password.
+3. Review the selected paid plan and Blueprint changes before confirming resource creation. The Blueprint generates `SECRET_KEY` and sets `APP_ENV=production`.
+4. Deploy and verify `/`, `/api/health`, and `/api/menu` in the Render URL and logs.
+
+The app refuses to start without `SECRET_KEY` or a MySQL `DATABASE_URL`. The pre-deploy migration command must be able to reach MySQL. This repository does not provision MySQL, connect a GitHub repository, or create/deploy cloud resources automatically.
+
+The Blueprint uses:
+
+- **Build command:** `pip install -r requirements.txt`
+- **Pre-deploy command:** `flask --app run.py db upgrade`
+- **Start command:** `gunicorn --bind 0.0.0.0:$PORT run:app`
+- **Health check:** `/api/health`
+
+The pre-deploy command runs on a separate instance, so ensure it can reach the configured MySQL server. Never commit production credentials or paste them into project files.
 
 ## Backend endpoints
 
@@ -33,6 +65,8 @@ The database currently contains `Category` and `MenuItem` models. No menu items 
 flask --app run.py db migrate -m "Describe the schema change"
 flask --app run.py db upgrade
 ```
+
+On Render, run `flask --app run.py db upgrade` as the pre-deploy command for a paid web service. If deploying on a plan without pre-deploy commands, apply migrations through an approved one-off command workflow before starting the new app version; do not run migrations independently in every Gunicorn worker.
 
 ## Existing frontend and QR preview
 

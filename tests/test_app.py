@@ -72,6 +72,26 @@ class AppTestCase(unittest.TestCase):
                 with self.client.get(path) as response:
                     self.assertEqual(response.status_code, 200)
 
+    def test_production_requires_secret_key(self):
+        with self.assertRaisesRegex(RuntimeError, "SECRET_KEY"):
+            create_app(
+                {
+                    "APP_ENV": "production",
+                    "SECRET_KEY": None,
+                    "SQLALCHEMY_DATABASE_URI": "mysql+pymysql://user:pass@host/db",
+                }
+            )
+
+    def test_production_rejects_sqlite(self):
+        with self.assertRaisesRegex(RuntimeError, "Production requires a MySQL"):
+            create_app(
+                {
+                    "APP_ENV": "production",
+                    "SECRET_KEY": "test-secret",
+                    "SQLALCHEMY_DATABASE_URI": "sqlite://",
+                }
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

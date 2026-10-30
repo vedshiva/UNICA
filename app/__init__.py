@@ -20,6 +20,16 @@ def create_app(test_config=None):
     if test_config:
         app.config.update(test_config)
 
+    if app.config["APP_ENV"] == "production":
+        if not app.config["SECRET_KEY"]:
+            raise RuntimeError("SECRET_KEY must be configured in production")
+        if not app.config["SQLALCHEMY_DATABASE_URI"].startswith(
+            "mysql+pymysql://"
+        ):
+            raise RuntimeError(
+                "Production requires a MySQL DATABASE_URL using PyMySQL"
+            )
+
     Path(app.instance_path).mkdir(parents=True, exist_ok=True)
     db.init_app(app)
     migrate.init_app(app, db)
